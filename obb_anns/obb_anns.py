@@ -420,15 +420,15 @@ class OBBAnns:
                     return 0.
 
             # expect to only have one annotation set at this point
-            gt_cat_id = img_gt['cat_id'].map(lambda x: x[0])
-            same_cat_gt = img_gt[gt_cat_id == detection['cat_id']]
+            gt_cat_id = img_gt['cat_id'].map(lambda x: x[0]) # TODO: gets all cat_ids of a page
+            same_cat_gt = img_gt[gt_cat_id == detection['cat_id']] # TODO: gets those annotations that have the same label as the detections label
             if len(same_cat_gt) > 0:
                 if self.props_oriented:
                     df = pd.DataFrame({
                         'gt': same_cat_gt['o_bbox'],
                         'det': [detection['bbox'].tolist()] * len(same_cat_gt)
-                    })
-                    overlaps = df.apply(calculate_oriented_overlap, 1)
+                        })
+                    overlaps = df.apply(calculate_oriented_overlap, 1) # TODO: calculates the overlab of the detection with the annotations
                 else:
                     df = pd.DataFrame({
                         'gt': same_cat_gt['a_bbox'],
@@ -440,12 +440,12 @@ class OBBAnns:
                     #     print(row)
                     overlaps = df.apply(calculate_aligned_overlap, 1)
 
-                max_overlap = overlaps.max()
+                max_overlap = overlaps.max() # TODO: gets the max overlap found
 
                 if max_overlap > 0.2:  # minimum overlap to "reserve a gt"
                     # Means that there's at least one with an overlap. We take
                     # the object with highest overlap.
-                    return {'bbox_id': overlaps.idxmax(),
+                    return {'bbox_id': overlaps.idxmax(), # TODO: gets the annotation id with the highest overlap
                             'overlap': max_overlap}
                 else:
                     return {'bbox_id': -1, 'overlap': 0.}
@@ -456,7 +456,7 @@ class OBBAnns:
         unique_images = np.unique(self.proposals['img_idx'])
         tot_props = self.proposals['cat_id'].value_counts()
 
-        for img_idx in tqdm(unique_images):
+        for img_idx in tqdm(unique_images): # TODO: Goes through all the images and finds for each detection the annotation with the highest overlap, detections with an overlap of < 0.2 are dropped
             # For every image, look at each detection
             # img_props is a pandas DataFrame
             img_props = self.proposals[self.proposals['img_idx'] == img_idx]
@@ -510,7 +510,12 @@ class OBBAnns:
             
             # sort overlaps by score:
             overlaps = overlaps[overlaps[:, 3].argsort()[::-1]]
-
+            # TODO: number of overlaps is determined by nms_pre parameter in config file -> if very high, fp rate also very high
+            # Moreover, overlaps contains all the proposals that were dropped because their overlap with any annotation was < 0.2
+            # Thus, why not drop all these trash-proposals?
+            # overlaps = overlaps[overlaps[:, 0] != -1, :]
+            # Probably because it requires knowledge about the gt.
+            # Better leave this as is.
             tp = overlaps[:, 1] >= iou_thr
             fp = overlaps[:, 1] < iou_thr
 
@@ -520,10 +525,20 @@ class OBBAnns:
             # Count number of ground truths without a corresponding detection
             # (False Negative)
             if by_class is not None:
-                ann_gt_idxs = set(self.ann_info[
-                                      self.ann_info['cat_id'].map(
-                                          lambda x: int(x[0])
-                                      ) == by_class].index)
+                # TODO: there seems to be an error here:
+                # ann_gt_idxs = set(self.ann_info[
+                #                       self.ann_info['cat_id'].map(
+                #                           lambda x: int(x[0])
+                #                       ) == by_class].index)
+                # TODO: IMO should get all the annotations on images in the test set only, and
+                # not all the annotations of all images in the complete deepscores dataset.
+                # Thus: (nr_of occurences should be updated accordingly, if this fix turns out to be correct)
+                list_of_dfs = [self.get_anns(img_idx=i) for i in range(len(self.img_info))]
+                ann_df = pd.concat(list_of_dfs, axis=0)
+                ann_gt_idxs = set(ann_df['cat_id'][
+                                    ann_df['cat_id'].apply(
+                                        lambda x: x[0]
+                                    ) == by_class].index)
             else:
                 ann_gt_idxs = set(self.ann_info.index)
 
@@ -620,14 +635,16 @@ class OBBAnns:
         cat_id = ann['cat_id']
         if isinstance(cat_id, list):
             cat_id = int(cat_id[annotation_set])
-
+        
         if 'comments' in ann.keys():
             parsed_comments = self.parse_comments(ann['comments'])
 
         if oriented:
-            bbox = ann.get('o_bbox', list(ann['bbox']))
-            draw.line(bbox + bbox[:2], fill=color, width=3
-                      )
+            if 'o_bbox' in ann.keys():
+                bbox = ann['o_bbox']
+            else:
+                bbox = list(ann['bbox'])
+            draw.line(bbox + bbox[:2], fill=color, width=3)
         else:
             bbox = ann['a_bbox']
             draw.rectangle(bbox, outline=color, width=2)
